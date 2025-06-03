@@ -1,4 +1,4 @@
-# Ads Placement Guardian
+# Ads Placement Guardian (APG)
 
 ## Problem statement
 
@@ -21,12 +21,11 @@ Web application that can be used for performing ad-hoc placement exclusions as w
 
 ### Prerequisites
 
-1. [A Google Ads Developer token](https://developers.google.com/google-ads/api/docs/first-call/dev-token#:~:text=A%20developer%20token%20from%20Google,SETTINGS%20%3E%20SETUP%20%3E%20API%20Center.)
-
-1. A GCP project with billing account attached
-1. Credentials for Google Ads API access - `google-ads.yaml`.
-   See details here - https://github.com/google/ads-api-report-fetcher/blob/main/docs/how-to-authenticate-ads-api.md \
-   Normally you need OAuth2 credentials (Client ID, Client Secret), a Google Ads developer token and a refresh token.
+1. Standard access to Google Ads account(s):
+    - person responsible for deploying APG should have *Standard* access to an MCC account.
+1. Credentials for Google Ads API access which stored in `google-ads.yaml`.
+   See details [here](https://github.com/google/ads-api-report-fetcher/blob/main/docs/how-to-authenticate-ads-api.md).
+1. A Google Cloud project with billing account attached.
 
 ### Installation
 
@@ -34,6 +33,7 @@ The primary installation method deploys APG into Google Cloud.
 The procedure automates deploying all required components to the Cloud.
 
 > For local deployment please refer to [local deployment guide](docs/run-cpr-locally.md).
+
 1. First you need to clone the repo in Cloud Shell:
 
 ```
