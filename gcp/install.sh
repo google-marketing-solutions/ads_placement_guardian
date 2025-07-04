@@ -243,6 +243,9 @@ update_permissions() {
   gcloud projects add-iam-policy-binding $PROJECT_ID \
     --member="serviceAccount:$PROJECT_ID@appspot.gserviceaccount.com" \
     --role="roles/editor"
+  gcloud projects add-iam-policy-binding $PROJECT_ID \
+    --member="$PROJECT_NUMBER-compute@developer.gserviceaccount.com" \
+    --role="roles/editor"
 }
 
 create_oauth_for_iap() {
