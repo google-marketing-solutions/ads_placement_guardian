@@ -271,8 +271,11 @@ def get_all_mcc_ids():
 def update_mcc_ids():
   root_mcc_id = _get_mcc_from_ads_client()
   cmd = commands.GetMccIds(str(root_mcc_id))
-  mcc_ids = bus.handle(cmd)
-  return _build_response(json.dumps(mcc_ids))
+  mccs = bus.handle(cmd)
+  for mcc in mccs:
+    cmd = commands.GetCustomerIds(mcc_id=mcc.get('id'))
+    bus.handle(cmd)
+  return _build_response(json.dumps(mccs))
 
 
 @app.route('/api/accounts/customers', methods=['GET'])
