@@ -37,12 +37,12 @@ The procedure automates deploying all required components to the Cloud.
 1. First you need to clone the repo in Cloud Shell:
 
 ```
-git clone https://github.com/google/ads_placement_guardian.git
+git clone https://github.com/google-marketing-solutions/ads_placement_guardian.git
 ```
 
 1. Go to the repo folder: `cd ads_placement_guardian/`
 
-1. Optionally put your `google-ads.yaml` there or be ready to provide all Ads API credentials
+1. Optionally put your `google-ads.yaml` there or be ready to provide all Google Ads API credentials
 
 1. Optionally adjust settings in `gcp/settings.ini`
 
@@ -52,7 +52,7 @@ git clone https://github.com/google/ads_placement_guardian.git
 ./gcp/install.sh deploy_all
 ```
 
-> You can update the existing installation by running `./gcp/update.sh`
+This will deploy APG to Google Appengine and create all necessary components (cloud functions, PubSub topics, Datastore, etc.).
 
 ### Usage
 
@@ -60,6 +60,16 @@ After Google cloud installation is completed, you'll be presented with a URL whe
 
 Alternatively you can open `default` services in [Appengine Services](https://corp.google.com/appengine/services) to access the application.
 > If you changed `service` name in look for this service name in Appengine.
+
+### Upgrade
+
+1. Open Google Cloud Shell.
+1. Ensure that you are in the `ads_placement_guardian` folder.
+1. Run upgrade command
+
+```bash
+./gcp/upgrade.sh
+```
 
 ## Disclaimer
 This is not an officially supported Google product.
