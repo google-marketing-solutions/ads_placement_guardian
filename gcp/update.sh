@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright 2023 Google LLC
+# Copyright 2025 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,4 +14,4 @@
 # limitations under the License.
 
 SCRIPT_PATH=$(readlink -f "$0" | xargs dirname)
-. /$SCRIPT_PATH/install.sh build_frontend deploy_app print_welcome_message
+. /$SCRIPT_PATH/install.sh deploy_app

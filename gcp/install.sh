@@ -213,11 +213,14 @@ create_firestore() {
 
 update_permissions() {
   # Grant GAE service account with the Service Account Token Creator role so it could create GCS signed urls
+  local cloud_build_sa="serviceAccount:$PROJECT_NUMBER@cloudbuild.gserviceaccount.com"
+  echo "Adding role storage.objectAdmin to $cloud_build_sa"
   gcloud projects add-iam-policy-binding $PROJECT_ID \
-    --member="serviceAccount:$PROJECT_NUMBER@cloudbuild.gserviceaccount.com" \
-    --role='roles/storage.objectAdmin'
+    --member="$cloud_build_sa" \
+    --role='roles/storage.objectAdmin' \
+    --no-user-output-enabled
 
-  ROLES=("roles/storage.objectAdmin" "roles/storage.objectViewer" "roles/logging.logWriter" "roles/artifactregistry.reader" "roles/artifactregistry.writer")
+  ROLES=("editor" "storage.objectAdmin" "storage.objectViewer" "logging.logWriter" "artifactregistry.reader" "artifactregistry.writer" "iam.serviceAccountTokenCreator" "cloudscheduler.jobRunner")
   SERVICE_ACCOUNTS=("$PROJECT_ID@appspot.gserviceaccount.com") # App Engine default service account
   SERVICE_ACCOUNTS+=("$PROJECT_NUMBER-compute@developer.gserviceaccount.com")
 
@@ -230,22 +233,10 @@ update_permissions() {
           echo "Adding role $ROLE to $MEMBER"
           gcloud projects add-iam-policy-binding $PROJECT_ID \
               --member="$MEMBER" \
-              --role="$ROLE"
+              --role="roles/$ROLE" \
+              --no-user-output-enabled
       done
   done
-
-  gcloud projects add-iam-policy-binding $PROJECT_ID \
-    --member=serviceAccount:$SERVICE_ACCOUNT \
-    --role=roles/iam.serviceAccountTokenCreator
-  gcloud projects add-iam-policy-binding $PROJECT_ID \
-    --member="serviceAccount:$PROJECT_ID@appspot.gserviceaccount.com" \
-    --role="roles/cloudscheduler.jobRunner"
-  gcloud projects add-iam-policy-binding $PROJECT_ID \
-    --member="serviceAccount:$PROJECT_ID@appspot.gserviceaccount.com" \
-    --role="roles/editor"
-  gcloud projects add-iam-policy-binding $PROJECT_ID \
-    --member="$PROJECT_NUMBER-compute@developer.gserviceaccount.com" \
-    --role="roles/editor"
 }
 
 create_oauth_for_iap() {
