@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ads-placement-guardian"
 dependencies = [
-  "googleads-housekeeper[gcp]>=0.3.6",
+  "googleads-housekeeper[gcp]>=0.3.9",
   "appengine-python-standard==1.1.6",
   "gunicorn",
   "flask",
@@ -15,7 +15,7 @@ dependencies = [
   "garf-youtube-data-api",
   "legacy-cgi",
 ]
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 description = "description"
 readme = "README.md"
 classifiers = [

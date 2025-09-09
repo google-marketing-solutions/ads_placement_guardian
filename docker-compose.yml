@@ -2,9 +2,7 @@ version: "3"
 
 services:
   backend:
-    build:
-      context: backend/.
-    image: apg-backend
+    image: ghcr.io/google-marketing-solutions/apg:latest
     container_name: apg_backend
     depends_on:
       - postgres
@@ -21,11 +19,11 @@ services:
       - REDIS_HOST=redis
       - PYTHONDONTWRITEBYTECODE=1
       - PYTHONUNBUFFERED=1
-      - GOOGLE_ADS_API_VERSION=v19
+      - GOOGLE_ADS_API_VERSION=v21
     ports:
-      - "5000:5000"
+      - "8080:8080"
     healthcheck:
-        test: ["CMD", "curl", "-f", "http://localhost:5000"]
+        test: ["CMD", "curl", "-f", "http://localhost:8080"]
         interval: 30s
         timeout: 10s
         retries: 5
@@ -40,7 +38,7 @@ services:
     image: apg-scheduler
     container_name: apg_scheduler
     environment:
-      - API_HOST=localhost:5000
+      - API_HOST=localhost:8080
     depends_on:
       - backend
     network_mode: "host"
