@@ -1,0 +1,13 @@
+{
+  "googleads_housekeeper/__init__.py": {"type": "version"},
+  "googleads_housekeeper/bootstrap.py": {"type": "bootstrap"},
+  "googleads_housekeeper/views.py": {"type": "views"},
+  "googleads_housekeeper/adapters/*.py": {"type": "adapters"},
+  "googleads_housekeeper/services/handlers.py": {"type": "handlers", "alternate": "tests/unit/services/test_handlers.py"},
+  "googleads_housekeeper/domain/placement_handler/*.py": {"type": "placements", "alternate": "tests/unit/domain/placement_handler/test_{}.py"},
+  "tests/unit/domain/placement_handler/test_*.py": {"alternate": "googleads_housekeeper/domain/placement_handler/{}.py"},
+  "googleads_housekeeper/domain/core/*.py": {"type": "core", "alternate": "tests/unit/domain/core/test_{}.py"},
+  "tests/unit/domain/core/test_*.py": {"alternate": "googleads_housekeeper/domain/core/{}.py"},
+  "googleads_housekeeper/domain/external_parsers/*.py": {"type": "parsers", "alternate": "tests/unit/domain/external_parsers/test_{}.py"},
+  "tests/unit/domain/external_parsers/test_*.py": {"alternate": "googleads_housekeeper/domain/external_parsers/{}.py"}
+}

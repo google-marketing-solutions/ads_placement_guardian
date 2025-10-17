@@ -1,0 +1,7 @@
+[paths]
+source =
+    googleads_housekeeper
+    .tox/*/site-packages
+[report]
+skip_empty = true
+omit = _*.py

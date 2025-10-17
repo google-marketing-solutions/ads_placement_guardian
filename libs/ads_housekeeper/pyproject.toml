@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "googleads-housekeeper"
+dependencies = [
+  "google-ads-api-report-fetcher[pandas]",
+  "SQLAlchemy==1.4.46",
+  "beautifulsoup4",
+  "google-api-python-client",
+  "psycopg2-binary",
+  "croniter",
+  "aiohttp",
+  "slack_sdk",
+  "garf_core",
+  "garf-youtube-data-api",
+  "legacy-cgi",
+  "pyyaml",
+]
+authors = [
+  {name = "Google Inc. (gTech gPS CSE team)", email = "no-reply@google.com"},
+]
+license = {text = "Apache 2.0"}
+requires-python = ">=3.9"
+description = "description"
+readme = "README.md"
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python"
+]
+dynamic = ["version"]
+
+
+[tool.setuptools.dynamic]
+version = {attr = "googleads_housekeeper.__version__"}
+
+[project.optional-dependencies]
+gcp = [
+  "google-cloud-firestore",
+  "google-cloud-pubsub",
+  "appengine-python-standard>=1.0.0",
+]
+
+all = [
+  "googleads_housekeeper[gcp]"
+]
+
+[options.extras_require]
+test =  [
+  "pytest",
+  "pytest-cov"
+]
+
+[tool.pytest.ini_options]
+testpaths = [
+  "tests",
+]
