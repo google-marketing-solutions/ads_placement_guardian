@@ -32,6 +32,7 @@ if os.environ.get(
     'Please install googleads-housekeeper with Google Cloud support - '
     '`pip install googleads-housekeeper[gcp]`'
   )
+import redis
 from google.cloud import firestore, pubsub_v1
 
 from googleads_housekeeper.adapters import notifications, orm, publisher
@@ -68,11 +69,20 @@ class LocalBootstrapper:
   """Prepares dependencies to run application locally."""
 
   def __init__(
-    self, topic_prefix: str | None = None, database_uri: str | None = None
+    self,
+    topic_prefix: str | None = None,
+    database_uri: str | None = None,
+    redis_host: str = os.environ.get('REDIS_HOST', 'localhost'),
+    redis_port: str | int = os.environ.get('REDIS_PORT', 6379),
   ) -> None:
     self.start_orm = True
-    self.uow = unit_of_work.SqlAlchemyUnitOfWork(database_uri or _get_db_uri())
-    self.publish_service = publisher.LogPublisher(topic_prefix)
+    self.uow = unit_of_work.SqlAlchemyUnitOfWork(
+      database_uri or f'sqlite:///{os.getcwd()}/ads_housekeeper_tasks.db'
+    )
+    self.publish_service = publisher.RedisPublisher(
+      client=redis.Redis(host=redis_host, port=int(redis_port)),
+      topic_prefix=topic_prefix,
+    )
     self.notification_service = notifications.ConsoleNotifications()
 
 
