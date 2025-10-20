@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ads-placement-guardian"
 dependencies = [
-  "googleads-housekeeper[gcp]>=0.3.9",
+  "googleads-housekeeper[gcp]>=0.3.12",
   "appengine-python-standard==1.1.6",
   "gunicorn",
   "flask",

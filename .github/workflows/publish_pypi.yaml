@@ -35,16 +35,36 @@ jobs:
             echo "should_publish=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Build the package
+      - name: Setup Node
         if: steps.version_check.outputs.should_publish == 'true'
-        run: uv build backend
+        uses: actions/setup-node@v3
+        with:
+          cache: 'npm'
+          node-version:  '22'
+
+      - name: Cache Node.js Dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm # Default location for npm cache
+          key: ${{ runner.os }}-node-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        if: steps.version_check.outputs.should_publish == 'true'
+        run: npm install
+
+      - name: Build frontend
+        working-directory: ./frontend
+        if: steps.version_check.outputs.should_publish == 'true'
+        run: npm run build
+
+      - name: Build the package
+        working-directory: ./backend
+        if: steps.version_check.outputs.should_publish == 'true'
+        run: uv build
 
       - name: Publish to PyPI
+        working-directory: ./backend
         if: steps.version_check.outputs.should_publish == 'true'
-        run: uv publish backend/dist/*
-
-      - name: Create Git Tag
-        if: steps.version_check.outputs.should_publish == 'true'
-        run: |
-          git tag v${{ steps.version_check.outputs.new_version }}
-          git push origin v${{ steps.version_check.outputs.new_version }}
+        run: uv publish dist/*
