@@ -20,11 +20,13 @@ from __future__ import annotations
 
 import dataclasses
 import functools
+import itertools
 import logging
 import operator
 from collections import defaultdict
 from collections.abc import Iterable
 from copy import deepcopy
+from typing import Any, Final
 
 import gaarf
 import proto
@@ -33,6 +35,14 @@ from google.ads import googleads
 from google.api_core import exceptions
 
 from googleads_housekeeper.services import enums
+
+MAX_BATCH: Final[int] = 10_000
+
+
+def _batched(iterable: Iterable[Any], chunk_size: int):
+  iterator = iter(iterable)
+  while chunk := tuple(itertools.islice(iterator, chunk_size)):
+    yield chunk
 
 
 @dataclasses.dataclass
@@ -256,35 +266,49 @@ class PlacementExcluder:
             len(operations),
             customer_id,
           )
-      except Exception as e:
+      except Exception as e:  # pylint: disable=W0718
         logging.error(e)
+    excluded_placements: list[gaarf.report.GaarfReport] = []
     for (
       customer_id,
       operations,
     ) in exclusion_operations.placement_exclusion_operations.items():
       try:
         if operations:
-          excluded_placements = self._exclude(customer_id, operations)
+          n_excluded_placements = self._exclude(customer_id, operations)
           logging.info(
             'Excluded %d placements from account %s',
-            len(operations),
+            n_excluded_placements,
             customer_id,
           )
-          logging.info(
-            '%d placements was excluded',
-            excluded_placements,
-          )
+          if (
+            len(
+              exclusion_placements_candidates
+              := exclusion_operations.excluded_placements
+            )
+            == n_excluded_placements
+          ):
+            excluded_placements.extend(exclusion_placements_candidates)
+          else:
+            logging.warning(
+              'Failed to exclude all requested placements. Expected %d, got %d',
+              len(operations),
+              n_excluded_placements,
+            )
       except Exception as e:
-        logging.error(e)
+        logging.error(
+          'Failed to exclude %d placements for account %s. Reason %s',
+          len(operations),
+          customer_id,
+          e,
+        )
     if exclusion_operations.campaign_set_association_operations:
       operations = self._create_campaign_set_operations(
         customer_id, exclusion_operations.campaign_set_association_operations
       )
       self._add_campaigns_to_shared_set(customer_id, operations)
-    if excluded_placements := exclusion_operations.excluded_placements:
-      excluded_placements = functools.reduce(
-        operator.add, exclusion_operations.excluded_placements
-      )
+    if excluded_placements:
+      excluded_placements = functools.reduce(operator.add, excluded_placements)
     if (
       associated_with_list_placements
       := exclusion_operations.associated_with_list_placements
@@ -504,7 +528,7 @@ class PlacementExcluder:
       return None
 
   def _add_placements_to_shared_set(
-    self, customer_id: int, operations: list
+    self, customer_id: int, operations: list[Any]
   ) -> None:
     """Adds placements to placement exclusion list.
 
@@ -512,7 +536,7 @@ class PlacementExcluder:
       customer_id: Google Ads account number.
       operations: Shared set attachment operations for a given customer_id.
     """
-    if not isinstance(operations, Iterable):
+    if not isinstance(operations, list):
       operations = [operations]
     try:
       for attempt in tenacity.Retrying(
@@ -526,7 +550,8 @@ class PlacementExcluder:
           )
     except tenacity.RetryError as retry_failure:
       logging.error(
-        'Cannot add placements to exclusion list for account ' "'%s' %d times",
+        'Cannot add placements to exclusion list for account %s '
+        'after %d attempts',
         customer_id,
         retry_failure.last_attempt.attempt_number,
       )
@@ -586,7 +611,7 @@ class PlacementExcluder:
     """Returns website as acceptable negative criterion."""
     return website_url.split('/')[0]
 
-  def _exclude(self, customer_id: str, operations) -> int:
+  def _exclude(self, customer_id: str, operations: list[Any]) -> int:
     """Exclude placements from Google Ads.
 
     Args:
@@ -598,8 +623,28 @@ class PlacementExcluder:
     Returns:
       Number of placements excluded.
     """
-    if not isinstance(operations, Iterable):
+    if not isinstance(operations, list):
       operations = [operations]
+    if len(operations) > MAX_BATCH:
+      logging.warning(
+        'Number of exclusion operations is greater that 10K. Batching...'
+      )
+
+      number_batches = len(operations) // MAX_BATCH + 1
+      results = 0
+      for batch_id, batch in enumerate(_batched(operations, MAX_BATCH), 1):
+        try:
+          result = self._exclude(customer_id=customer_id, operations=batch)
+          results += result
+        except Exception as e:
+          logging.error(
+            'Failed to perform exclusion operations for batch %d of %d '
+            'batches. Reason: %s',
+            batch_id,
+            number_batches,
+            str(e),
+          )
+      return results
     try:
       for attempt in tenacity.Retrying(
         retry=tenacity.retry_if_exception_type(exceptions.InternalServerError),
@@ -607,14 +652,20 @@ class PlacementExcluder:
         wait=tenacity.wait_exponential(),
       ):
         with attempt:
-          result = self.mutate_operation(
+          operation_result = self.mutate_operation(
             customer_id=str(customer_id), operations=operations
           )
-          return len(result.results)
+          return len(operation_result.results)
     except tenacity.RetryError as retry_failure:
       logging.error(
-        "Cannot exclude placements for account '%s' %d times",
+        'Cannot exclude placements for account %s after retrying for %d times',
         customer_id,
         retry_failure.last_attempt.attempt_number,
+      )
+    except Exception as e:  # pylint: disable=W0718
+      logging.error(
+        'Cannot exclude placements for account %s. Reason: %s',
+        customer_id,
+        str(e),
       )
     return 0
