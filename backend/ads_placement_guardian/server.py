@@ -23,13 +23,15 @@ import os
 
 import flask
 import googleads_housekeeper
-from gaarf.cli import utils as gaarf_utils
+from garf_executors.entrypoints import utils as garf_utils
 from googleads_housekeeper import bootstrap, views
 from googleads_housekeeper.domain import commands
+from opentelemetry.instrumentation.flask import FlaskInstrumentor
 
 import ads_placement_guardian
 
 app = flask.Flask(__name__)
+FlaskInstrumentor().instrument_app(app)
 
 STATIC_DIR = os.getenv('STATIC_DIR', 'static')
 
@@ -42,7 +44,9 @@ bus = bootstrap.Bootstrapper(
 ).bootstrap_app()
 
 
-logger = gaarf_utils.init_logging(name='cpr', loglevel='INFO')
+logger = garf_utils.init_logging(
+  name='cpr', loglevel='INFO', logger_type='gcloud'
+)
 logging.getLogger('google.ads.googleads.client').setLevel(logging.WARNING)
 
 

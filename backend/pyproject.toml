@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ads-placement-guardian"
 dependencies = [
-  "googleads-housekeeper[gcp]>=0.3.12",
+  "googleads-housekeeper[gcp]>=0.4.1",
   "appengine-python-standard==1.1.6",
   "gunicorn",
   "flask",
@@ -14,6 +14,8 @@ dependencies = [
   "smart_open[gcs]",
   "garf-youtube-data-api",
   "legacy-cgi",
+  "garf-executors[bq]",
+  "opentelemetry-instrumentation-flask",
 ]
 requires-python = ">=3.9"
 description = "description"
