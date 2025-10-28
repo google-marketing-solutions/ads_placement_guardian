@@ -47,9 +47,11 @@ class TestPlacementExcluder:
     return gaarf.api_clients.GoogleAdsApiClient()
 
   @pytest.fixture
-  def excluder(self, test_client):
+  def excluder(self, test_client, fake_tracer):
     return placement_excluder.PlacementExcluder(
-      client=test_client, exclusion_level=enums.ExclusionLevelEnum.AD_GROUP
+      client=test_client,
+      exclusion_level=enums.ExclusionLevelEnum.AD_GROUP,
+      tracer=fake_tracer,
     )
 
   @pytest.fixture

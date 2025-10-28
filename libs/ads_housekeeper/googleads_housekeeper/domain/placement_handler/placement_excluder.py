@@ -33,6 +33,7 @@ import proto
 import tenacity
 from google.ads import googleads
 from google.api_core import exceptions
+from opentelemetry import trace
 
 from googleads_housekeeper.services import enums
 
@@ -134,6 +135,7 @@ class PlacementExcluder:
     excludable_from_account_only:
       Placements from these campaigns can be excluded only from
       account level.
+    tracer: Initialized OpenTelemetry tracer.
   """
 
   associable_with_negative_lists = ('VIDEO',)
@@ -144,6 +146,7 @@ class PlacementExcluder:
     self,
     client: gaarf.api_clients.GoogleAdsApiClient,
     exclusion_level: enums.ExclusionLevelEnum,
+    tracer: trace.Tracer,
   ) -> None:
     self._client = client
     self.exclusion_level = (
@@ -151,6 +154,7 @@ class PlacementExcluder:
       if isinstance(exclusion_level, str)
       else exclusion_level
     )
+    self.tracer = tracer
 
   @property
   def client(self):
@@ -269,39 +273,50 @@ class PlacementExcluder:
       except Exception as e:  # pylint: disable=W0718
         logging.error(e)
     excluded_placements: list[gaarf.report.GaarfReport] = []
-    for (
-      customer_id,
-      operations,
-    ) in exclusion_operations.placement_exclusion_operations.items():
-      try:
-        if operations:
-          n_excluded_placements = self._exclude(customer_id, operations)
-          logging.info(
-            'Excluded %d placements from account %s',
-            n_excluded_placements,
-            customer_id,
-          )
-          if (
-            len(
-              exclusion_placements_candidates
-              := exclusion_operations.excluded_placements
-            )
-            == n_excluded_placements
-          ):
-            excluded_placements.extend(exclusion_placements_candidates)
-          else:
-            logging.warning(
-              'Failed to exclude all requested placements. Expected %d, got %d',
-              len(operations),
+    with self.tracer.start_as_current_span('exclude'):
+      for (
+        customer_id,
+        operations,
+      ) in exclusion_operations.placement_exclusion_operations.items():
+        try:
+          if operations:
+            n_excluded_placements = self._exclude(customer_id, operations)
+            logging.info(
+              'Excluded %d placements from account %s',
               n_excluded_placements,
+              customer_id,
             )
-      except Exception as e:
-        logging.error(
-          'Failed to exclude %d placements for account %s. Reason %s',
-          len(operations),
-          customer_id,
-          e,
-        )
+            if (
+              len(
+                exclusion_placements_candidates
+                := exclusion_operations.excluded_placements
+              )
+              == n_excluded_placements
+            ):
+              excluded_placements.extend(exclusion_placements_candidates)
+              trace.get_current_span().set_attribute(
+                'excluder.num_excluded_placements', n_excluded_placements
+              )
+            else:
+              logging.warning(
+                'Failed to exclude all requested placements. '
+                'Expected %d, got %d',
+                len(operations),
+                n_excluded_placements,
+              )
+              trace.get_current_span().set_attribute(
+                'excluder.num_excluded_placements', n_excluded_placements
+              )
+              trace.get_current_span().set_attribute(
+                'excluder.num_excludable_placements', len(operations)
+              )
+        except Exception as e:
+          logging.error(
+            'Failed to exclude %d placements for account %s. Reason %s',
+            len(operations),
+            customer_id,
+            e,
+          )
     if exclusion_operations.campaign_set_association_operations:
       operations = self._create_campaign_set_operations(
         customer_id, exclusion_operations.campaign_set_association_operations
@@ -435,14 +450,12 @@ class PlacementExcluder:
       placement_info.placement_type
       == enums.PlacementTypeEnum.MOBILE_APPLICATION.name
     ):
-      app_id = self._format_app_id(placement_info.placement)
+      app_id = format_app_id(placement_info.placement)
     if not entity_criterion:
       entity_criterion = self.criterion_operation.create
     # Assign specific criterion
     if placement_info.placement_type == (enums.PlacementTypeEnum.WEBSITE.name):
-      entity_criterion.placement.url = self._format_website(
-        placement_info.placement
-      )
+      entity_criterion.placement.url = format_website(placement_info.placement)
     if (
       placement_info.placement_type
       == enums.PlacementTypeEnum.MOBILE_APPLICATION.name
@@ -596,21 +609,6 @@ class PlacementExcluder:
       customer_id=str(customer_id), operations=operations
     )
 
-  def _format_app_id(self, app_id: str) -> str:
-    """Returns app_id as acceptable negative criterion."""
-    if app_id.startswith('mobileapp::'):
-      criteria = app_id.split('-')
-      app_id = criteria[-1]
-      app_store = criteria[0].split('::')[-1]
-      app_store = app_store.replace('mobileapp::1000', '')
-      app_store = app_store.replace('1000', '')
-      return f'{app_store}-{app_id}'
-    return app_id
-
-  def _format_website(self, website_url: str) -> str:
-    """Returns website as acceptable negative criterion."""
-    return website_url.split('/')[0]
-
   def _exclude(self, customer_id: str, operations: list[Any]) -> int:
     """Exclude placements from Google Ads.
 
@@ -669,3 +667,20 @@ class PlacementExcluder:
         str(e),
       )
     return 0
+
+
+def format_app_id(app_id: str) -> str:
+  """Returns app_id as acceptable negative criterion."""
+  if app_id.startswith('mobileapp::'):
+    criteria = app_id.split('-')
+    app_id = criteria[-1]
+    app_store = criteria[0].split('::')[-1]
+    app_store = app_store.replace('mobileapp::1000', '')
+    app_store = app_store.replace('1000', '')
+    return f'{app_store}-{app_id}'
+  return app_id
+
+
+def format_website(website_url: str) -> str:
+  """Returns website as acceptable negative criterion."""
+  return website_url.split('/')[0]

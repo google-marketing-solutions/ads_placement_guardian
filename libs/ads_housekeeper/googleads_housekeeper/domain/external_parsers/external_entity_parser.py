@@ -23,6 +23,7 @@ Mobile Application or anything that requires connection to external
 from __future__ import annotations
 
 from garf_core import report
+from opentelemetry import trace
 
 from googleads_housekeeper.domain.external_parsers import parsers
 
@@ -32,10 +33,12 @@ class ExternalEntitiesParser:
 
   Attributes:
       uow: Unit of work to handle transaction.
+      tracer: Initialized OpenTelemetry tracer.
   """
 
-  def __init__(self) -> None:
+  def __init__(self, tracer: trace.Tracer) -> None:
     """Initializes an instance of ExternalEntitiesParser."""
+    self.tracer = tracer
 
   def parse_specification_chain(
     self,

@@ -20,6 +20,8 @@ from __future__ import annotations
 
 from typing import Callable, Type
 
+from opentelemetry import trace
+
 from googleads_housekeeper.domain import commands, events
 from googleads_housekeeper.services import unit_of_work
 
@@ -29,11 +31,13 @@ Message = commands.Command | events.Event
 class MessageBus:
   def __init__(
     self,
+    tracer,
     uow: unit_of_work.AbstractUnitOfWork,
     event_handlers: dict[Type[events.Event], Callable],
     command_handlers: dict[Type[commands.Command], Callable],
     dependencies: dict,
   ) -> None:
+    self.tracer = tracer
     self.uow = uow
     self.event_handlers = event_handlers
     self.command_handlers = command_handlers
@@ -56,11 +60,17 @@ class MessageBus:
 
   def handle_command(self, command: commands.Command) -> None:
     handler = self.command_handlers[type(command)]
-    result = handler(command)
+    with self.tracer.start_as_current_span(command.__class__.__name__):
+      current_span = trace.get_current_span()
+      result = handler(command)
+      current_span.add_event('command executed successfully')
     self.return_value = result
     self.queue.extend(self.uow.collect_new_events())
 
   def handle_event(self, event: events.Event) -> None:
     for handler in self.event_handlers[type(event)]:
-      handler(event)
+      with self.tracer.start_as_current_span(event.__class__.__name__):
+        current_span = trace.get_current_span()
+        handler(event)
+        current_span.add_event('event processed successfully')
       self.queue.extend(self.uow.collect_new_events())

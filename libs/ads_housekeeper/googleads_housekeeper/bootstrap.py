@@ -24,6 +24,11 @@ import os
 import smart_open
 import yaml
 from gaarf.api_clients import GoogleAdsApiClient
+from opentelemetry import trace
+from opentelemetry.exporter.cloud_trace import CloudTraceSpanExporter
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 if os.environ.get(
   'ADS_HOUSEKEEPER_DEPLOYMENT_TYPE'
@@ -35,6 +40,7 @@ if os.environ.get(
 import redis
 from google.cloud import firestore, pubsub_v1
 
+import googleads_housekeeper
 from googleads_housekeeper.adapters import notifications, orm, publisher
 from googleads_housekeeper.services import handlers, messagebus, unit_of_work
 
@@ -122,9 +128,7 @@ class Bootstrapper:
     self.database_uri = database_uri
     self.bootstrapper_parameters = kwargs or {}
 
-  def bootstrap_app(
-    self,
-  ) -> messagebus.MessageBus:
+  def bootstrap_app(self) -> messagebus.MessageBus:
     """Builds MessageBus based on specified deployment type."""
     bootstrapper = DEPLOYMENT_TYPES[self.deployment_type](
       topic_prefix=self.topic_prefix,
@@ -180,6 +184,7 @@ def bootstrap(
     _get_notification_service()
   ),
   publish_service: publisher.BasePublisher = publisher.LogPublisher(),
+  tracer: trace.Tracer | None = None,
 ) -> messagebus.MessageBus:
   """Injects dependencies to run the application.
 
@@ -189,6 +194,7 @@ def bootstrap(
     uow: Unit of Work to handle transactions.
     notification_service: Service to send notifications on operations retults.
     publish_service: Service to send events.
+    tracer: Initialized OpenTelemetry tracer.
 
   Returns:
     MessageBus with injected dependencies.
@@ -196,7 +202,9 @@ def bootstrap(
   if start_orm:
     orm.start_mappers(engine=uow.engine)
 
+  tracer = tracer or setup_tracer('ahk')
   dependencies = {
+    'tracer': tracer,
     'uow': uow,
     'ads_api_client': ads_api_client or _get_default_google_ads_api_client(),
     'notification_service': notification_service,
@@ -215,6 +223,7 @@ def bootstrap(
     for command_type, handler in handlers.COMMAND_HANDLERS.items()
   }
   return messagebus.MessageBus(
+    tracer=tracer,
     uow=uow,
     event_handlers=injected_event_handlers,
     command_handlers=injected_command_handlers,
@@ -230,3 +239,20 @@ def _inject_dependencies(handler, dependencies):
     if name in params
   }
   return lambda message: handler(message, **deps)
+
+
+def setup_tracer(app_name: str, app_version: str | None = None) -> trace.Tracer:
+  """Creates tracer for sending data to Google Cloud Trace."""
+  resource = Resource.create(
+    attributes={
+      'service.name': app_name,
+      'service.version': app_version or googleads_housekeeper.__version__,
+      'cloud.provider': 'gcp',
+    }
+  )
+  tracer_provider = TracerProvider(resource=resource)
+  trace.set_tracer_provider(tracer_provider)
+  cloud_trace_exporter = CloudTraceSpanExporter()
+  span_processor = BatchSpanProcessor(cloud_trace_exporter)
+  tracer_provider.add_span_processor(span_processor)
+  return trace.get_tracer(app_name)

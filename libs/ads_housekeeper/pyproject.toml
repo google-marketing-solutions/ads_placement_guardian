@@ -17,6 +17,10 @@ dependencies = [
   "garf-youtube-data-api",
   "legacy-cgi",
   "pyyaml",
+  "opentelemetry-api",
+  "opentelemetry-sdk",
+  "opentelemetry-exporter-gcp-trace",
+  "garf-exporter",
 ]
 authors = [
   {name = "Google Inc. (gTech gPS CSE team)", email = "no-reply@google.com"},
@@ -40,6 +44,7 @@ gcp = [
   "google-cloud-firestore",
   "google-cloud-pubsub",
   "appengine-python-standard>=1.0.0",
+  "garf-exporter[bq]",
 ]
 
 all = [

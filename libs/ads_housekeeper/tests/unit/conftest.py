@@ -23,6 +23,12 @@ import pytest
 from googleads_housekeeper import bootstrap
 from googleads_housekeeper.adapters import notifications, publisher
 from googleads_housekeeper.services import unit_of_work
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+  InMemorySpanExporter,
+)
 
 
 class FakeGoogleAdsApiClient:
@@ -57,8 +63,20 @@ def fake_publisher():
 
 
 @pytest.fixture(scope='session')
-def bus(fake_publisher, in_memory_sqlite_db):
+def fake_tracer():
+  exporter = InMemorySpanExporter()
+  span_processor = SimpleSpanProcessor(exporter)
+
+  provider = TracerProvider()
+  provider.add_span_processor(span_processor)
+  trace.set_tracer_provider(provider)
+  return trace.get_tracer(__name__)
+
+
+@pytest.fixture(scope='session')
+def bus(fake_publisher, in_memory_sqlite_db, fake_tracer):
   return bootstrap.bootstrap(
+    tracer=fake_tracer,
     start_orm=True,
     ads_api_client=FakeGoogleAdsApiClient(),
     uow=unit_of_work.SqlAlchemyUnitOfWork(in_memory_sqlite_db),

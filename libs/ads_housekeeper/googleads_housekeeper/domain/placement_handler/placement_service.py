@@ -22,6 +22,7 @@ import functools
 import operator
 
 import gaarf
+from opentelemetry import trace
 
 from googleads_housekeeper import views
 from googleads_housekeeper.domain.core import (
@@ -49,6 +50,7 @@ def exclude_placements(
   uow: unit_of_work.AbstractUnitOfWork,
   client: gaarf.GoogleAdsApiClient,
   runtime_options: RuntimeOptions,
+  tracer: trace.Tracer,
 ) -> placement_excluder.ExclusionResult:
   """Excludes data from Google Ads based on specified criteria.
 
@@ -57,15 +59,25 @@ def exclude_placements(
     uow: Unit of Work to handle the transaction.
     client: Google Ads API client to perform fetching.
     runtime_options: Options for configuring fetching and saving of data.
+    tracer: Initialized OpenTelemetry tracer.
   """
   report_fetcher = gaarf.report_fetcher.AdsReportFetcher(client)
-  fetcher = placement_fetcher.PlacementFetcher(report_fetcher)
+  fetcher = placement_fetcher.PlacementFetcher(report_fetcher, tracer=tracer)
   excluder = placement_excluder.PlacementExcluder(
-    client, task_obj.exclusion_level
+    client, task_obj.exclusion_level, tracer=tracer
   )
-  to_be_excluded_placements = find_placements_for_exclusion(
-    task_obj, uow, report_fetcher, runtime_options
-  )
+  with tracer.start_as_current_span('find_placements'):
+    to_be_excluded_placements = find_placements_for_exclusion(
+      task_obj=task_obj,
+      uow=uow,
+      report_fetcher=report_fetcher,
+      runtime_options=runtime_options,
+      tracer=tracer,
+    )
+    trace.get_current_span().set_attribute(
+      'placements.num_placements_for_exclusion',
+      len(to_be_excluded_placements),
+    )
   if not to_be_excluded_placements:
     return placement_excluder.ExclusionResult()
   customer_ids = to_be_excluded_placements['customer_id'].to_list(
@@ -96,7 +108,7 @@ def _is_already_excluded_placement(
       Level of exclusion (ACCOUNT, CAMPAIGN, AD_GROUP).
 
   Returns:
-    Description of return.
+    Whether placement has already been excluded.
 
   Raises:
     ValueError: When incorrect exclusion level is specified.
@@ -109,14 +121,22 @@ def _is_already_excluded_placement(
     level_id = placement_info.ad_group_id
   else:
     raise ValueError(f'Incorrect exclusion_level: {exclusion_level}')
-  return placement_info.placement in already_excluded_placements.get(
-    level_id, []
-  )
+  if (
+    placement_info.placement_type
+    == enums.PlacementTypeEnum.MOBILE_APPLICATION.name
+  ):
+    placement = placement_excluder.format_app_id(placement_info.placement)
+  elif placement_info.placement_type == enums.PlacementTypeEnum.WEBSITE.name:
+    placement = placement_excluder.format_website(placement_info.placement)
+  else:
+    placement = placement_info.placement
+  return placement in already_excluded_placements.get(level_id, [])
 
 
 def find_placements_for_exclusion(
   task_obj: task.Task,
   uow: unit_of_work.AbstractUnitOfWork,
+  tracer: trace.Tracer,
   report_fetcher: gaarf.report_fetcher.AdsReportFetcher | None = None,
   runtime_options: RuntimeOptions = RuntimeOptions(),
   limit: int | None = None,
@@ -126,6 +146,7 @@ def find_placements_for_exclusion(
   Args:
     task_obj: A Task for identifying placements suitable for exclusion.
     uow: Unit of Work to handle the transaction.
+    tracer: Initialized OpenTelemetry tracer.
     report_fetcher: An instance of AdsReportFetcher to handle API requests.
     runtime_options: Options for configuring fetching and saving of data.
     limit: Whether to fetch all data or only a subset.
@@ -133,8 +154,8 @@ def find_placements_for_exclusion(
   Returns:
     Report containing placements suitable for exclusion.
   """
-  fetcher = placement_fetcher.PlacementFetcher(report_fetcher)
-  external_parser = external_entity_parser.ExternalEntitiesParser()
+  fetcher = placement_fetcher.PlacementFetcher(report_fetcher, tracer=tracer)
+  external_parser = external_entity_parser.ExternalEntitiesParser(tracer=tracer)
   specification = (
     exclusion_specification.ExclusionSpecification.from_expression(
       task_obj.exclusion_rule

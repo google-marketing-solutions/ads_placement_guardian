@@ -52,9 +52,10 @@ class TestPlacementFetcher:
     return gaarf.api_clients.GoogleAdsApiClient()
 
   @pytest.fixture
-  def fetcher(self, test_client):
+  def fetcher(self, test_client, fake_tracer):
     return placement_fetcher.PlacementFetcher(
-      gaarf.report_fetcher.AdsReportFetcher(test_client)
+      report_fetcher=gaarf.report_fetcher.AdsReportFetcher(test_client),
+      tracer=fake_tracer,
     )
 
   @pytest.fixture

@@ -23,9 +23,10 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from gaarf.api_clients import GoogleAdsApiClient
-from gaarf.cli import utils as gaarf_utils
 from gaarf.report import GaarfReport
 from gaarf.report_fetcher import AdsReportFetcher
+from garf_executors.entrypoints import utils as garf_utils
+from opentelemetry import trace
 
 from googleads_housekeeper.adapters.legacy_adapter import TaskAdapter
 from googleads_housekeeper.adapters.notifications import MessagePayload
@@ -42,7 +43,9 @@ from googleads_housekeeper.domain.placement_handler import (
 )
 from googleads_housekeeper.services import enums, unit_of_work
 
-logger = gaarf_utils.init_logging(loglevel='INFO', name='ahk')
+logger = garf_utils.init_logging(
+  loglevel='INFO', name='ahk', logger_type='gcloud'
+)
 
 
 def get_mcc_accounts(
@@ -163,6 +166,7 @@ def run_manual_exclusion_task(
   uow: unit_of_work.AbstractUnitOfWork,
   ads_api_client: GoogleAdsApiClient,
   is_observe_mode: bool,
+  tracer: trace.Tracer,
 ) -> dict[str, int]:
   if is_observe_mode:
     logger.warning(
@@ -176,9 +180,11 @@ def run_manual_exclusion_task(
   with uow:
     report_fetcher = AdsReportFetcher(ads_api_client)
     excluder = placement_excluder.PlacementExcluder(
-      ads_api_client, enums.ExclusionLevelEnum[cmd.exclusion_level]
+      ads_api_client,
+      enums.ExclusionLevelEnum[cmd.exclusion_level],
+      tracer=tracer,
     )
-    fetcher = placement_fetcher.PlacementFetcher(report_fetcher)
+    fetcher = placement_fetcher.PlacementFetcher(report_fetcher, tracer=tracer)
     placement_exclusion_lists = fetcher.get_placement_exclusion_lists(
       customer_ids=cmd.customer_ids
     )
@@ -234,6 +240,7 @@ def task_schedule_deleted(
 
 def run_task(
   cmd: commands.RunTask,
+  tracer: trace.Tracer,
   uow: unit_of_work.AbstractUnitOfWork,
   ads_api_client: GoogleAdsApiClient,
   is_observe_mode: bool,
@@ -247,25 +254,37 @@ def run_task(
     start_time = datetime.now()
     if task_obj.output == task.TaskOutput.NOTIFY or is_observe_mode:
       report_fetcher = AdsReportFetcher(api_client=ads_api_client)
-      to_be_excluded_placements = (
-        placement_service.find_placements_for_exclusion(
-          task_obj=task_obj,
-          uow=uow,
-          report_fetcher=report_fetcher,
+      with tracer.start_as_current_span('find_placements'):
+        to_be_excluded_placements = (
+          placement_service.find_placements_for_exclusion(
+            task_obj=task_obj,
+            uow=uow,
+            report_fetcher=report_fetcher,
+            tracer=tracer,
+          )
         )
-      )
+        trace.get_current_span().set_attribute(
+          'placements.num_placements_for_exclusion',
+          len(to_be_excluded_placements),
+        )
       exclusion_result = placement_excluder.ExclusionResult(
         excluded_placements=to_be_excluded_placements
       )
     else:
-      exclusion_result = placement_service.exclude_placements(
-        task_obj=task_obj,
-        uow=uow,
-        client=ads_api_client,
-        runtime_options=placement_service.RuntimeOptions(
-          always_fetch_youtube_preview_mode=False
-        ),
-      )
+      with tracer.start_as_current_span('exclude_placements'):
+        exclusion_result = placement_service.exclude_placements(
+          task_obj=task_obj,
+          uow=uow,
+          client=ads_api_client,
+          runtime_options=placement_service.RuntimeOptions(
+            always_fetch_youtube_preview_mode=False
+          ),
+          tracer=tracer,
+        )
+        trace.get_current_span().set_attribute(
+          'placements.excluded_placements',
+          len(exclusion_result.excluded_placements),
+        )
     end_time = datetime.now()
     n_excluded_placements = len(exclusion_result.excluded_placements or [])
     n_associated_with_list_placements = len(
@@ -342,6 +361,7 @@ def _generate_date_range_json(date_range: int, from_days_ago: int) -> str:
 
 def run_preview_placements(
   cmd: commands.PreviewPlacements,
+  tracer: trace.Tracer,
   uow: unit_of_work.AbstractUnitOfWork,
   ads_api_client: GoogleAdsApiClient,
   save_to_db: bool = False,
@@ -350,6 +370,7 @@ def run_preview_placements(
 
   Args:
     cmd: The command containing parameters for previewing placements.
+    tracer: Initialized OpenTelemetry tracer.
     uow: The unit of work managing database transactions.
     ads_api_client: The client used to interact with the Google Ads API.
     save_to_db: Whether to save the fetched results to the database.
@@ -376,6 +397,7 @@ def run_preview_placements(
       save_to_db=save_to_db,
     ),
     limit=cmd.limit,
+    tracer=tracer,
   )
   if not to_be_excluded_placements:
     data = {}

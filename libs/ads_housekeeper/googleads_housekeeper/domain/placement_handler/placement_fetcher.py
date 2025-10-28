@@ -22,6 +22,7 @@ from collections.abc import Sequence
 import gaarf
 import numpy as np
 import pandas as pd
+from opentelemetry import trace
 
 from googleads_housekeeper.domain.core import exclusion_specification, task
 from googleads_housekeeper.domain.placement_handler import entities
@@ -67,17 +68,22 @@ class PlacementFetcher:
 
   Attributes:
     report_fetcher: An instance of AdsReportFetcher to handle API requests.
+    tracer: Initialized OpenTelemetry tracer.
   """
 
   def __init__(
-    self, report_fetcher: gaarf.report_fetcher.AdsReportFetcher
+    self,
+    report_fetcher: gaarf.report_fetcher.AdsReportFetcher,
+    tracer: trace.Tracer,
   ) -> None:
     """Initializes PlacementFetcher.
 
     Args:
       report_fetcher: An instance of AdsReportFetcher to handle API requests.
+      tracer: Initialized OpenTelemetry tracer.
     """
     self.report_fetcher = report_fetcher
+    self.tracer = tracer
 
   def get_placements_for_account(
     self,
@@ -101,36 +107,50 @@ class PlacementFetcher:
       )
     )
     runtime_options = specification.define_runtime_options()
-    if not (
-      placements := self._get_placement_performance_data(
-        account, task_obj, limit
-      )
-    ):
-      return None
-    if runtime_options.is_conversion_query:
-      if (
-        placements_by_conversion_name
-        := self._get_placement_conversion_split_data(account, task_obj)
+    with self.tracer.start_as_current_span('fetch_performance_report'):
+      if not (
+        placements := self._get_placement_performance_data(
+          account, task_obj, limit
+        )
       ):
-        conversion_split_exclusion_specification = (
-          exclusion_specification.ExclusionSpecification(
-            specifications=[runtime_options.conversion_rules]
+        return None
+      trace.get_current_span().set_attribute(
+        'fetcher.performance_report_total_rows',
+        len(placements),
+      )
+    if runtime_options.is_conversion_query:
+      with self.tracer.start_as_current_span('fetch_conversion_split_report'):
+        if (
+          placements_by_conversion_name
+          := self._get_placement_conversion_split_data(account, task_obj)
+        ):
+          trace.get_current_span().set_attribute(
+            'fetcher.conversion_split_report_total_rows',
+            len(placements),
           )
-        )
-        placements_by_conversion_name = (
-          conversion_split_exclusion_specification.apply_specifications(
-            placements_by_conversion_name
+          conversion_split_exclusion_specification = (
+            exclusion_specification.ExclusionSpecification(
+              specifications=[runtime_options.conversion_rules]
+            )
           )
-        )
-        placements = self._join_conversion_split(
-          placements,
-          placements_by_conversion_name,
-          runtime_options.conversion_name,
-        )
-      else:
-        self._extend_placement_with_conversion_split_columns(
-          placements=placements
-        )
+          placements_by_conversion_name = (
+            conversion_split_exclusion_specification.apply_specifications(
+              placements_by_conversion_name
+            )
+          )
+          trace.get_current_span().set_attribute(
+            'fetcher.conversion_split_report_filtered_rows',
+            len(placements),
+          )
+          placements = self._join_conversion_split(
+            placements,
+            placements_by_conversion_name,
+            runtime_options.conversion_name,
+          )
+        else:
+          self._extend_placement_with_conversion_split_columns(
+            placements=placements
+          )
     return self._aggregate_placements(placements, task_obj.exclusion_level)
 
   def _get_placement_performance_data(
@@ -203,9 +223,14 @@ class PlacementFetcher:
       Mapping between entity_id from specified exclusion level to all
       negative criteria ids.
     """
-    already_excluded_placements = self.report_fetcher.fetch(
-      entities.AlreadyExcludedPlacements(exclusion_level), account
-    )
+    with self.tracer.start_as_current_span('fetch_placement_exclusion_lists'):
+      already_excluded_placements = self.report_fetcher.fetch(
+        entities.AlreadyExcludedPlacements(exclusion_level), account
+      )
+      trace.get_current_span().set_attribute(
+        'fetcher.num_already_excluded_placements',
+        len(already_excluded_placements),
+      )
     if not already_excluded_placements:
       return {}
     for row in already_excluded_placements:
@@ -221,9 +246,14 @@ class PlacementFetcher:
   def get_placement_exclusion_lists(
     self, customer_ids: Sequence[int]
   ) -> dict[str, str]:
-    placement_exclusion_lists = self.report_fetcher.fetch(
-      entities.PlacementExclusionLists(), customer_ids
-    )
+    with self.tracer.start_as_current_span('fetch_placement_exclusion_lists'):
+      placement_exclusion_lists = self.report_fetcher.fetch(
+        entities.PlacementExclusionLists(), customer_ids
+      )
+      trace.get_current_span().set_attribute(
+        'fetcher.num_placement_exclusion_lists',
+        len(placement_exclusion_lists),
+      )
     return placement_exclusion_lists.to_dict(
       key_column='name',
       value_column='resource_name',
@@ -450,26 +480,38 @@ class PlacementFetcher:
       for key, value in aggregation_dict.items()
       if key in placements.column_names
     }
-    aggregated_placements = (
-      placements.to_pandas().groupby(groupby, as_index=False).agg(aggregations)
-    )
-    if perform_relative_aggregations:
-      for key, [numerator, denominator] in COMPOUND_METRICS.items():
-        if {numerator, denominator}.issubset(
-          set(aggregated_placements.columns)
-        ):
-          aggregated_placements[key] = (
-            aggregated_placements[numerator]
-            / aggregated_placements[denominator]
-          )
-          if key == 'avg_cpm':
-            aggregated_placements[key] = aggregated_placements[key] * 1000
-          if key == 'ctr':
-            aggregated_placements[key] = round(aggregated_placements[key], 4)
-          else:
-            aggregated_placements[key] = round(aggregated_placements[key], 2)
-    aggregated_placements.replace([np.inf, -np.inf], 0, inplace=True)
-    return gaarf.report.GaarfReport.from_pandas(aggregated_placements)
+    with self.tracer.start_as_current_span('aggregate_placements'):
+      trace.get_current_span().set_attribute(
+        'fetcher.unaggregated_placements',
+        len(placements),
+      )
+      aggregated_placements = (
+        placements.to_pandas()
+        .groupby(groupby, as_index=False)
+        .agg(aggregations)
+      )
+      if perform_relative_aggregations:
+        for key, [numerator, denominator] in COMPOUND_METRICS.items():
+          if {numerator, denominator}.issubset(
+            set(aggregated_placements.columns)
+          ):
+            aggregated_placements[key] = (
+              aggregated_placements[numerator]
+              / aggregated_placements[denominator]
+            )
+            if key == 'avg_cpm':
+              aggregated_placements[key] = aggregated_placements[key] * 1000
+            if key == 'ctr':
+              aggregated_placements[key] = round(aggregated_placements[key], 4)
+            else:
+              aggregated_placements[key] = round(aggregated_placements[key], 2)
+      aggregated_placements.replace([np.inf, -np.inf], 0, inplace=True)
+      placements = gaarf.report.GaarfReport.from_pandas(aggregated_placements)
+      trace.get_current_span().set_attribute(
+        'fetcher.aggregated_placements',
+        len(placements),
+      )
+    return placements
 
   def _define_aggregation_group_by(
     self, exclusion_level: enums.ExclusionLevelEnum

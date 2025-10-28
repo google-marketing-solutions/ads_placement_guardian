@@ -24,8 +24,10 @@ from googleads_housekeeper.domain.external_parsers import (
 )
 
 
-def test_external_entity_parser(mocker):
-  external_parser = external_entity_parser.ExternalEntitiesParser()
+def test_external_entity_parser(mocker, fake_tracer):
+  external_parser = external_entity_parser.ExternalEntitiesParser(
+    tracer=fake_tracer
+  )
   specification = (
     exclusion_specification.ExclusionSpecification.from_expression(
       'WEBSITE_INFO:title contains example'
