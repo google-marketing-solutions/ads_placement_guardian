@@ -284,6 +284,8 @@ class ExclusionSpecification:
       return entities
     to_be_excluded_entities = []
     for entity in entities:
+      if not entity.placement:
+        continue
       if reason := self.satisfies(entity):
         if include_reason:
           entity['reason'] = ','.join(list(itertools.chain(*reason)))
