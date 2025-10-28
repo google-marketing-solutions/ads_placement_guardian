@@ -17,9 +17,10 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
       - name: Get versions and check for change
         id: version_check
         run: |
@@ -41,4 +42,4 @@ jobs:
 
       - name: Publish to PyPI
         if: steps.version_check.outputs.should_publish == 'true'
-        run: uv publish libs/ads_housekeeper/*
+        run: uv publish libs/ads_housekeeper/dist*
