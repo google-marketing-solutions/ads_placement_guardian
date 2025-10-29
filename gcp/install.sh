@@ -150,6 +150,10 @@ enable_api() {
   gcloud services enable youtube.googleapis.com
   gcloud services enable cloudscheduler.googleapis.com
   gcloud services enable eventarc.googleapis.com
+  gcloud services enable eventarc.googleapis.com
+  gcloud services enable logging.googleapis.com
+  gcloud services enable monitoring.googleapis.com
+  gcloud services enable cloudtrace.googleapis.com
 }
 
 deploy_app() {
@@ -176,7 +180,6 @@ deploy_app() {
   if [[ $APP_EXISTS -ne 0 ]]; then
     gcloud app create --region $APPENGINE_REGION
   fi
-  update_permissions
   gcloud app deploy -q $APPLICATION_NAME
   cd $SCRIPT_PATH
 }
@@ -220,7 +223,11 @@ update_permissions() {
     --role='roles/storage.objectAdmin' \
     --no-user-output-enabled
 
-  ROLES=("editor" "storage.objectAdmin" "storage.objectViewer" "logging.logWriter" "artifactregistry.reader" "artifactregistry.writer" "iam.serviceAccountTokenCreator" "cloudscheduler.jobRunner")
+  ROLES=("editor" "storage.objectAdmin" "storage.objectViewer"
+    "logging.logWriter" "artifactregistry.reader" "artifactregistry.writer"
+    "iam.serviceAccountTokenCreator" "cloudscheduler.jobRunner"
+    "monitoring.metricWriter" "cloudtrace.agent"
+  )
   SERVICE_ACCOUNTS=("$PROJECT_ID@appspot.gserviceaccount.com") # App Engine default service account
   SERVICE_ACCOUNTS+=("$PROJECT_NUMBER-compute@developer.gserviceaccount.com")
 
@@ -308,6 +315,7 @@ deploy_all() {
   enable_api
   generate_youtube_api_key
   deploy_files
+  update_permissions
   deploy_app
   create_topics
   deploy_cloud_functions
