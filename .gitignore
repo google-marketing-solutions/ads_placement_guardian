@@ -13,3 +13,4 @@ frontend/package.json
 *.egg-info
 dist
 static
+node_modules
