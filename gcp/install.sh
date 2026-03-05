@@ -41,7 +41,7 @@ convert_answer() {
 
 check_ads_config() {
   echo -e "\n${COLOR}Setting up Google Ads authentication...${NC}"
-  gsutil -q stat $GCS_BASE_PATH/google-ads.yaml
+  gcloud storage objects list --stat --fetch-encrypted-object-hashes $GCS_BASE_PATH/google-ads.yaml
   remote_ads_config_exists=`echo $?`
   if [[ $remote_ads_config_exists -eq 0 ]]; then
     echo -n "Found save config at $GCS_BASE_PATH/google-ads.yaml, would you like to use it: (Y/n)?: "
@@ -276,15 +276,17 @@ grant_access() {
 
 deploy_files () {
   echo 'Deploying files to GCS'
-  if ! gsutil ls gs://$PROJECT_ID > /dev/null 2> /dev/null; then
-    gsutil mb -b on gs://$PROJECT_ID
+  if ! gcloud storage ls gs://$PROJECT_ID > /dev/null 2> /dev/null; then
+    gcloud storage buckets create --uniform-bucket-level-access gs://$PROJECT_ID
   fi
 
   if [[ $remote_ads_config_exists -eq 1 ]]; then
     if [[ -f ./google-ads.yaml ]]; then
-      gsutil -h "Content-Type:text/plain" cp ./google-ads.yaml $GCS_BASE_PATH/google-ads.yaml
+      gcloud storage cp ./google-ads.yaml $GCS_BASE_PATH/google-ads.yaml
+      gcloud storage objects update $GCS_BASE_PATH/google-ads.yaml --content-type="text/plain"
     elif [[ -f $HOME/google-ads.yaml ]]; then
-      gsutil -h "Content-Type:text/plain" cp $HOME/google-ads.yaml $GCS_BASE_PATH/google-ads.yaml
+      gcloud storage cp $HOME/google-ads.yaml $GCS_BASE_PATH/google-ads.yaml
+      gcloud storage objects update $GCS_BASE_PATH/google-ads.yaml --content-type="text/plain"
     else
       echo "Please upload google-ads.yaml"
     fi
