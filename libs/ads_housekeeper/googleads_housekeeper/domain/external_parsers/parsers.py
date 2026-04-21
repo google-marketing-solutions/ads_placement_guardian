@@ -18,15 +18,15 @@
 from collections.abc import Sequence
 from typing import Callable
 
-import garf_core
-import garf_youtube_data_api
+import garf.community.google.youtube
+import garf.core
 
 from googleads_housekeeper.domain.external_parsers import website_parser
 
 
 def get_video_info(
   placements: Sequence[str], **kwargs: str
-) -> dict[str, garf_core.report.GarfRow]:
+) -> dict[str, garf.core.report.GarfRow]:
   """Calls YouTube Data API to get information on provided YouTube videos."""
   videos_query = """
   SELECT
@@ -52,8 +52,8 @@ def get_video_info(
         entities.append(row.placement)
   if not entities:
     return {}
-  results = garf_youtube_data_api.YouTubeDataApiReportFetcher(
-    garf_youtube_data_api.YouTubeDataApiClient()
+  results = garf.community.google.youtube.YouTubeDataApiReportFetcher(
+    garf.community.google.youtube.YouTubeDataApiClient()
   ).fetch(videos_query, id=placements)
   output = {}
   for row in results:
@@ -63,7 +63,7 @@ def get_video_info(
 
 def get_channel_info(
   placements: Sequence[str], **kwargs: str
-) -> dict[str, garf_core.report.GarfRow]:
+) -> dict[str, garf.core.report.GarfRow]:
   """Calls YouTube Data API to get information on provided YouTube videos."""
   channels_query = """
   SELECT
@@ -84,8 +84,8 @@ def get_channel_info(
         entities.append(row.placement)
   if not entities:
     return {}
-  results = garf_youtube_data_api.YouTubeDataApiReportFetcher(
-    garf_youtube_data_api.YouTubeDataApiClient()
+  results = garf.community.google.youtube.YouTubeDataApiReportFetcher(
+    garf.community.google.youtube.YouTubeDataApiClient()
   ).fetch(channels_query, id=entities)
   output = {}
   for row in results:
@@ -95,7 +95,7 @@ def get_channel_info(
 
 def get_website_info(
   placements: Sequence[str], **kwargs: str
-) -> dict[str, garf_core.report.GarfRow]:
+) -> dict[str, garf.core.report.GarfRow]:
   """Performs web scraping of provided website urls."""
   entities = []
   for row in placements:
@@ -107,7 +107,7 @@ def get_website_info(
   results = website_parser.WebSiteParser().parse(entities)
   output = {}
   for row in results:
-    output[row.placement] = garf_core.report.GarfRow(
+    output[row.placement] = garf.core.report.GarfRow(
       data=[row.title, row.description, row.keywords],
       column_names=['title', 'description', 'keywords'],
     )
@@ -115,7 +115,7 @@ def get_website_info(
 
 
 PARSER_MAPPING: dict[
-  str, Callable[[Sequence[str]], dict[str, garf_core.report.GarfRow]]
+  str, Callable[[Sequence[str]], dict[str, garf.core.report.GarfRow]]
 ] = {
   'YOUTUBE_CHANNEL_INFO': get_channel_info,
   'YOUTUBE_VIDEO_INFO': get_video_info,

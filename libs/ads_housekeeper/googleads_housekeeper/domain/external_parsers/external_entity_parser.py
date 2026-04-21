@@ -22,7 +22,7 @@ Mobile Application or anything that requires connection to external
 
 from __future__ import annotations
 
-from garf_core import report
+from garf.core import report
 from opentelemetry import trace
 
 from googleads_housekeeper.domain.external_parsers import parsers

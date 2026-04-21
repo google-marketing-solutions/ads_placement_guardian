@@ -23,9 +23,9 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from gaarf.api_clients import GoogleAdsApiClient
-from gaarf.report import GaarfReport
 from gaarf.report_fetcher import AdsReportFetcher
-from garf_executors.entrypoints import utils as garf_utils
+from garf.core import GarfReport
+from garf.executors.entrypoints import utils as garf_utils
 from opentelemetry import trace
 
 from googleads_housekeeper.adapters.legacy_adapter import TaskAdapter
@@ -85,7 +85,7 @@ def get_mcc_accounts(
 
 def get_accessible_mccs(
   ads_api_client: GoogleAdsApiClient, root_mcc_id: int
-) -> GaarfReport:
+) -> GarfReport:
   """Fetches all available mccs under a root_mcc_id.
 
   Args:
@@ -189,7 +189,7 @@ def run_manual_exclusion_task(
       customer_ids=cmd.customer_ids
     )
     exclusion_result = excluder.exclude_placements(
-      to_be_excluded_placements=GaarfReport(
+      to_be_excluded_placements=GarfReport(
         results=cmd.placements, column_names=cmd.header
       ),
       placement_exclusion_lists=placement_exclusion_lists,
