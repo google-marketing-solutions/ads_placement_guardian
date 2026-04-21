@@ -13,14 +13,14 @@ dependencies = [
   "croniter",
   "aiohttp",
   "slack_sdk",
-  "garf_core",
-  "garf-youtube-data-api",
+  "garf-core",
+  "garf-youtube",
   "legacy-cgi",
   "pyyaml",
   "opentelemetry-api",
   "opentelemetry-sdk",
   "opentelemetry-exporter-gcp-trace",
-  "garf-exporter",
+  "garf-executors[bq]",
 ]
 authors = [
   {name = "Google Inc. (gTech gPS CSE team)", email = "no-reply@google.com"},
@@ -54,7 +54,8 @@ all = [
 [options.extras_require]
 test =  [
   "pytest",
-  "pytest-cov"
+  "pytest-cov",
+  "pytest-mock",
 ]
 
 [tool.pytest.ini_options]

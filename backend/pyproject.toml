@@ -12,9 +12,7 @@ dependencies = [
   "flask-cors",
   "redis",
   "smart_open[gcs]",
-  "garf-youtube-data-api",
   "legacy-cgi",
-  "garf-executors[bq]",
   "opentelemetry-instrumentation-flask",
 ]
 requires-python = ">=3.9"

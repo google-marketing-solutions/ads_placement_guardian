@@ -223,7 +223,7 @@ class PlacementFetcher:
       Mapping between entity_id from specified exclusion level to all
       negative criteria ids.
     """
-    with self.tracer.start_as_current_span('fetch_placement_exclusion_lists'):
+    with self.tracer.start_as_current_span('fetch_already_excluded_placements'):
       already_excluded_placements = self.report_fetcher.fetch(
         entities.AlreadyExcludedPlacements(exclusion_level), account
       )
