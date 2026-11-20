@@ -9,25 +9,25 @@ services:
       - redis
     environment:
       - GOOGLE_API_KEY=${YOUTUBE_DATA_API_KEY}
+      - APG_API_KEY=${APG_API_KEY:?APG_API_KEY must be set}
       - GOOGLE_ADS_PATH_TO_CONFIG=/google-ads.yaml
       - GOOGLE_APPLICATION_CREDENTIALS=/service-account.json
       - DB_HOST=apg_db
       - DB_PORT=5432
       - DB_USER=apg
-      - DB_PASSWORD=abc123
+      - DB_PASSWORD=${APG_DB_PASSWORD:?APG_DB_PASSWORD must be set}
       - DB_NAME=apg
       - REDIS_HOST=redis
       - PYTHONDONTWRITEBYTECODE=1
       - PYTHONUNBUFFERED=1
       - GOOGLE_ADS_API_VERSION=v21
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     healthcheck:
         test: ["CMD", "curl", "-f", "http://localhost:8080"]
         interval: 30s
         timeout: 10s
         retries: 5
-    network_mode: "host"
     volumes:
       - "${GOOGLE_ADS_YAML:-$HOME/google-ads.yaml}:/google-ads.yaml"
       - "${GOOGLE_APPLICATION_CREDENTIALS}:/service-account.json"
@@ -38,28 +38,26 @@ services:
     image: apg-scheduler
     container_name: apg_scheduler
     environment:
-      - API_HOST=localhost:8080
+      - API_HOST=apg_backend:8080
+      - APG_API_KEY=${APG_API_KEY:?APG_API_KEY must be set}
     depends_on:
       - backend
-    network_mode: "host"
     restart: unless-stopped
   postgres:
     image: postgres:9.6
     container_name: apg_db
     environment:
       - POSTGRES_USER=apg
-      - POSTGRES_PASSWORD=abc123
+      - POSTGRES_PASSWORD=${APG_DB_PASSWORD:?APG_DB_PASSWORD must be set}
     ports:
-      - "54321:5432"
+      - "127.0.0.1:54321:5432"
     volumes:
       - apg_data:/var/lib/postgresql/data
-    network_mode: "host"
     restart: unless-stopped
   redis:
     image: redis:alpine
     ports:
-      - "63791:6379"
-    network_mode: "host"
+      - "127.0.0.1:63791:6379"
 
 volumes:
   apg_data: {}

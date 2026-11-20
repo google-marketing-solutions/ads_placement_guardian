@@ -17,9 +17,14 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
+import hmac
+import http
 import json
 import logging
 import os
+from urllib import parse
 
 import flask
 import googleads_housekeeper
@@ -62,6 +67,93 @@ def check_youtube_data_api_key():
     raise RuntimeError('GOOGLE_API_KEY is not set')
 
 
+def _is_authorized_request(expected_key: str) -> bool:
+  """Validate Bearer or HTTP Basic credentials in constant time."""
+  auth_header = flask.request.headers.get('Authorization', '')
+  scheme, _, credentials = auth_header.partition(' ')
+  expected_bytes = expected_key.encode('utf-8')
+  if scheme == 'Bearer':
+    return hmac.compare_digest(credentials.encode('utf-8'), expected_bytes)
+  if scheme == 'Basic':
+    try:
+      decoded = base64.b64decode(credentials, validate=True).decode('utf-8')
+    except (binascii.Error, UnicodeDecodeError):
+      return False
+    _, has_colon, password = decoded.partition(':')
+    return bool(has_colon) and hmac.compare_digest(
+      password.encode('utf-8'), expected_bytes
+    )
+  return False
+
+
+@app.before_request
+def require_api_key() -> flask.Response | None:
+  """Enforce APG_API_KEY authentication on all API routes.
+
+  When APG_API_KEY is set (required in docker-compose and recommended for any
+  deployment not fronted by Cloud IAP), every API request must carry a matching
+  Authorization: Bearer <key> header (for CLI/scheduler callers) or HTTP Basic
+  password (so the browser UI prompts once and authenticates /api/* XHR calls).
+  IAP-fronted App Engine deployments leave APG_API_KEY unset.
+  """
+  expected = os.environ.get('APG_API_KEY')
+  if not expected:
+    return None
+  is_api_route = flask.request.path.startswith(
+    '/api/'
+  ) or flask.request.endpoint not in (None, 'catch_all', 'static')
+  if not is_api_route or _is_authorized_request(expected):
+    return None
+  return flask.Response(
+    'Unauthorized',
+    status=401,
+    headers={'WWW-Authenticate': 'Basic realm="Ads Placement Guardian"'},
+  )
+
+
+_DEFAULT_PORTS = {'http': 80, 'https': 443}
+_STATE_CHANGING_METHODS = frozenset({'POST', 'PUT', 'PATCH', 'DELETE'})
+
+
+def _extract_origin_host(url: str) -> str | None:
+  """Extract normalized host[:port] from an Origin or Referer URL."""
+  parsed = parse.urlparse(url)
+  default_port = _DEFAULT_PORTS.get(parsed.scheme)
+  if default_port is None or not parsed.hostname:
+    return None
+  try:
+    port = parsed.port
+  except ValueError:
+    return None
+  host = f'[{parsed.hostname}]' if ':' in parsed.hostname else parsed.hostname
+  host = host.lower()
+  if port and port != default_port:
+    return f'{host}:{port}'
+  return host
+
+
+@app.before_request
+def _reject_cross_origin_state_change() -> None:
+  """Reject state-changing API requests from cross-origin browser contexts."""
+  is_api_route = flask.request.path.startswith(
+    '/api/'
+  ) or flask.request.endpoint not in (None, 'catch_all', 'static')
+  if flask.request.method not in _STATE_CHANGING_METHODS or not is_api_route:
+    return
+  sec_fetch_site = flask.request.headers.get('Sec-Fetch-Site', '').lower()
+  if sec_fetch_site not in ('', 'same-origin', 'none'):
+    flask.abort(http.HTTPStatus.FORBIDDEN)
+  source_url = flask.request.headers.get(
+    'Origin'
+  ) or flask.request.headers.get('Referer')
+  if not source_url:
+    return
+  request_url = f'{flask.request.scheme}://{flask.request.host}'
+  source_host = _extract_origin_host(source_url)
+  if not source_host or source_host != _extract_origin_host(request_url):
+    flask.abort(http.HTTPStatus.FORBIDDEN)
+
+
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 def catch_all(path):
@@ -81,7 +173,7 @@ def get_tasks():
 
 @app.route('/api/tasks', methods=['POST'])
 def save_task():
-  data = flask.request.get_json(force=True)
+  data = flask.request.get_json()
   cmd = commands.SaveTask(**data)
   task_id = bus.handle(cmd)
   return _build_response(json.dumps(str(task_id)))
@@ -113,7 +205,7 @@ def get_task_execution(task_id, execution_id):
 
 @app.route('/api/tasks/<task_id>', methods=['POST'])
 def update_task(task_id):
-  data = flask.request.get_json(force=True)
+  data = flask.request.get_json()
   cmd = commands.SaveTask(task_id=task_id, **data)
   task_id = bus.handle(cmd)
   return _build_response(json.dumps(str(task_id)))
@@ -129,7 +221,7 @@ def delete_task(task_id):
 def run_task(task_id):
   """Runs task based on provided task_id."""
   [config] = views.config(bus.uow)
-  data = flask.request.get_json(force=True)
+  data = flask.request.get_json()
   data.update({'save_to_db': config.get('save_to_db', True)})
   cmd = commands.RunTask(id=task_id, **data)
   result, message_payload = bus.handle(cmd)
@@ -175,7 +267,7 @@ def preview_placements():
     config = {'mcc_id': mcc_id, 'email_address': ''}
   else:
     config = config[0]
-  data = flask.request.get_json(force=True)
+  data = flask.request.get_json()
   cmd = commands.PreviewPlacements(
     **data,
     save_to_db=config.get('save_to_db', True),
@@ -193,7 +285,7 @@ def preview_placements():
 
 @app.route('/api/placements/exclude', methods=['POST'])
 def run_manual_excluder():
-  data = flask.request.get_json(force=True)
+  data = flask.request.get_json()
   cmd = commands.RunManualExclusion(**data)
   result = bus.handle(cmd)
   logger.info('Running command: %s returned  %s', cmd, result)
@@ -209,7 +301,7 @@ def get_allowlisted_placements():
 
 @app.route('/api/placements/allowlist', methods=['POST'])
 def add_to_allowlisting():
-  data = flask.request.get_json(force=True)
+  data = flask.request.get_json()
   cmd = commands.AddToAllowlisting(**data)
   bus.handle(cmd)
   return _build_response(json.dumps('success'))
@@ -217,7 +309,7 @@ def add_to_allowlisting():
 
 @app.route('/api/placements/allowlist', methods=['DELETE'])
 def remove_from_allowlisting():
-  data = flask.request.get_json(force=True)
+  data = flask.request.get_json()
   cmd = commands.RemoveFromAllowlisting(**data)
   bus.handle(cmd)
   return _build_response(json.dumps('success'))
@@ -250,7 +342,7 @@ def get_config():
 
 @app.route('/api/configs', methods=['POST'])
 def set_config():
-  data = flask.request.get_json(force=True)
+  data = flask.request.get_json()
   if existing_config := views.config(bus.uow):
     config_data = existing_config[0]
     config_data.update(data)
@@ -298,10 +390,10 @@ def get_customer_ids():
 @app.route('/api/accounts/customers', methods=['POST'])
 def update_customer_ids():
   """Updates available account ids based on root MCC."""
-  if not flask.request.values:
+  if not flask.request.get_data(cache=True):
     mcc_ids = [account.get('id') for account in views.mcc_ids(bus.uow)]
   else:
-    data = flask.request.get_json(force=True)
+    data = flask.request.get_json()
     if not (mcc_id := data.get('mcc_id')):
       if not (config := views.config(bus.uow)):
         mcc_id = _get_mcc_from_ads_client()
@@ -334,9 +426,7 @@ def get_application_info():
 
 def _build_response(msg='', status=200, mimetype='application/json'):
   """Helper method to build the response."""
-  response = app.response_class(msg, status=status, mimetype=mimetype)
-  response.headers['Access-Control-Allow-Origin'] = '*'
-  return response
+  return app.response_class(msg, status=status, mimetype=mimetype)
 
 
 def _get_mcc_from_ads_client() -> str:

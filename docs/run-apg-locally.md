@@ -23,11 +23,13 @@ There are two main ways you can run Ads Placement Guardian locally:
     ./gcp/install.sh build_frontend
     ```
 
-2. Expose two environmental variables:
+2. Expose required environmental variables (including a database password and shared `/api/*` key):
 
     ```
     export GOOGLE_ADS_YAML=/path/to/google-ads.yaml
     export YOUTUBE_DATA_API_KEY="YOUR_DATA_API_KEY"
+    export APG_DB_PASSWORD="$(openssl rand -hex 32)"
+    export APG_API_KEY="$(openssl rand -hex 32)"
     ```
 
 3. Start containers

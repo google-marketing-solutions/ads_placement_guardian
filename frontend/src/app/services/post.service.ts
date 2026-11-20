@@ -28,23 +28,27 @@ export class PostService {
   constructor(private httpClient: HttpClient) {}
 
   private apiPost<T>(url: string, params: string) {
-    const headers = new HttpHeaders();
-    headers.set('Content-Type', 'application/json; charset=utf-8');
+    const headers = new HttpHeaders({
+      'Content-Type': 'application/json; charset=utf-8',
+      'X-Requested-With': 'XMLHttpRequest',
+    });
     const cacheBuster = Date.now();
     return this.httpClient.post<ReturnPromise>(
       `/api/${url}?cb=${cacheBuster}`,
-      params,
+      params || '{}',
       { headers },
     );
   }
 
   private apiDelete<T>(url: string, params: string) {
-    const headers = new HttpHeaders();
-    headers.set('Content-Type', 'application/json; charset=utf-8');
+    const headers = new HttpHeaders({
+      'Content-Type': 'application/json; charset=utf-8',
+      'X-Requested-With': 'XMLHttpRequest',
+    });
     const cacheBuster = Date.now();
     const httpOptions = {
       headers,
-      body: params,
+      body: params || '{}',
     };
     return this.httpClient.delete<ReturnPromise>(
       `/api/${url}?cb=${cacheBuster}`,
