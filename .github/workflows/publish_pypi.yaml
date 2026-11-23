@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main  # Or your release branch
+  workflow_dispatch:
 
 jobs:
   publish:
@@ -22,42 +23,46 @@ jobs:
 
       - name: Get versions and check for change
         id: version_check
+        env:
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           PREV_VERSION=$(git show HEAD~1:backend/ads_placement_guardian/__init__.py | grep -oE "__version__ = '([0-9]+\.[0-9]+\.[0-9]+)'" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
           CURRENT_VERSION=$(grep -oE "__version__ = '([0-9]+\.[0-9]+\.[0-9]+)'" backend/ads_placement_guardian/__init__.py | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          PYPI_STATUS=$(curl -s -o /dev/null -w '%{http_code}' "https://pypi.org/pypi/ads-placement-guardian/${CURRENT_VERSION}/json" || echo "000")
 
-          if [[ "$CURRENT_VERSION" != "$PREV_VERSION" ]]; then
-            echo "Version change detected: $PREV_VERSION -> $CURRENT_VERSION"
-            echo "should_publish=true" >> $GITHUB_OUTPUT
-            echo "new_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          if [[ "$EVENT_NAME" == "workflow_dispatch" || "$CURRENT_VERSION" != "$PREV_VERSION" || "$PYPI_STATUS" == "404" ]]; then
+            echo "Publishing version $CURRENT_VERSION (prev=$PREV_VERSION, event=$EVENT_NAME, pypi_http=$PYPI_STATUS)"
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+            echo "new_version=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
           else
-            echo "No version change. Skipping publish."
-            echo "should_publish=false" >> $GITHUB_OUTPUT
+            echo "No version change and $CURRENT_VERSION already on PyPI (http=$PYPI_STATUS). Skipping publish."
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Setup Node
         if: steps.version_check.outputs.should_publish == 'true'
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
+          node-version: '18'
           cache: 'npm'
-          node-version:  '22'
+          cache-dependency-path: 'frontend/package-lock.json'
 
-      - name: Cache Node.js Dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.npm # Default location for npm cache
-          key: ${{ runner.os }}-node-${{ hashFiles('frontend/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node
       - name: Install frontend dependencies
         working-directory: ./frontend
         if: steps.version_check.outputs.should_publish == 'true'
-        run: npm install
+        env:
+          NG_CLI_ANALYTICS: ci
+        run: npm install --no-audit
 
       - name: Build frontend
         working-directory: ./frontend
         if: steps.version_check.outputs.should_publish == 'true'
-        run: npm run build
+        env:
+          NG_CLI_ANALYTICS: ci
+        run: |
+          npm run build
+          mkdir -p ../backend/ads_placement_guardian/static/img
+          cp ../backend/ads_placement_guardian/img/gtechlogo.png ../backend/ads_placement_guardian/static/img/gtechlogo.png
 
       - name: Build the package
         working-directory: ./backend
